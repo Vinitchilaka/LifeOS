@@ -1,0 +1,256 @@
+================================================================================
+          LIFEOS BACKEND - SPRING BOOT & SECURITY INTERVIEW QUESTIONS
+================================================================================
+
+This file contains the core technical interview questions related to the features 
+implemented in LifeOS, along with senior-level answers you can say firmly to impress 
+interviewers.
+
+--------------------------------------------------------------------------------
+Q1: Why should you disable Open Session In View (OSIV) in a production Spring Boot 
+    application? (spring.jpa.open-in-view=false)
+--------------------------------------------------------------------------------
+ANSWER:
+"By default, Spring Boot sets OSIV to true, which keeps the Hibernate Session 
+(database connection) open for the entire duration of an HTTP request, including 
+during view rendering or JSON serialization in the Controller. 
+
+In production, under high traffic, this is a major performance risk because database 
+connections are held open longer than necessary, quickly exhausting the connection 
+pool (HikariCP) and leading to request timeouts. 
+
+By disabling OSIV, we enforce strict transaction boundaries. The database connection 
+is opened and closed strictly within the service layer transaction (e.g., @Transactional). 
+To prevent LazyInitializationException in the controller, we fetch required lazy 
+relationships in the service layer using JPQL 'JOIN FETCH' or map entities directly 
+to DTOs."
+
+--------------------------------------------------------------------------------
+Q2: Why must you avoid using Lombok's @Data annotation on JPA Entities?
+--------------------------------------------------------------------------------
+ANSWER:
+"Using @Data on a JPA entity is an anti-pattern. @Data automatically generates 
+equals() and hashCode() using all fields of the class, including the database ID 
+and lazy-loaded associations.
+
+This causes two major issues:
+1. Hash Collisions in Collections: Before an entity is saved, its ID is null. 
+   Once saved, its ID is populated. If you add a new entity to a HashSet before 
+   saving it, its hashcode will change after saving. As a result, you will not 
+   be able to find or remove that entity from the HashSet, causing memory leaks 
+   or logic bugs.
+2. LazyInitializationException or Infinite Recursion: If @ToString is generated, 
+   printing the entity can trigger lazy-loading of associated entities outside 
+   of a transaction, throwing an exception or causing infinite loops in 
+   bidirectional relationships.
+
+For JPA entities, it is best practice to use @Getter and @Setter at the class 
+level, and write custom equals() and hashCode() methods using a stable business 
+key (like email or UUID), or rely on standard database ID comparison."
+
+--------------------------------------------------------------------------------
+Q3: Why do we use custom DTOs (Request/Response) instead of exposing JPA Entities 
+    directly in REST Controllers?
+--------------------------------------------------------------------------------
+ANSWER:
+"Exposing JPA entities directly in REST endpoints is a major security and 
+architectural risk. We use DTOs to address three key concerns:
+
+1. Mass Assignment Vulnerability: If a controller accepts a JPA entity directly 
+   in a POST/PUT request, a malicious client can include fields they shouldn't 
+   have access to (e.g. status = true, emailVerified = true, role = ADMIN). 
+   Spring/Hibernate will bind these fields directly to the entity and save them 
+   to the database. DTOs restrict input to only the fields allowed to be modified.
+2. API Decoupling: DTOs separate our database schema from our external API contract. 
+   We can rename database columns or change entity relationships without breaking 
+   client-side applications.
+3. Preventing Data Leakage: We should never return sensitive fields like hashed 
+   passwords back to the client. A Response DTO ensures we only return safe fields."
+
+--------------------------------------------------------------------------------
+Q4: Why can we safely disable CSRF protection in a stateless REST API using JWT?
+--------------------------------------------------------------------------------
+ANSWER:
+"CSRF (Cross-Site Request Forgery) attacks rely on session-based cookies. When a 
+browser makes a request to a website, it automatically attaches any session cookies 
+associated with that domain. If a user is logged into their bank and visits a 
+malicious site, the malicious site can forge a request to the bank, and the browser 
+will auto-send the session cookie.
+
+In our stateless REST API, we do not use cookies or server-side sessions. Instead, 
+we use JWT tokens stored on the client side (like localStorage or memory). The client 
+must explicitly attach this token in the 'Authorization: Bearer <token>' header for 
+every request. Since browsers do not automatically append custom headers to cross-site 
+requests, a malicious site cannot forge requests to our API. Therefore, our API is 
+naturally immune to CSRF, and we can safely disable it."
+
+--------------------------------------------------------------------------------
+Q5: What is the difference between a Servlet Filter and Spring's DispatcherServlet 
+    concerning security?
+--------------------------------------------------------------------------------
+ANSWER:
+"Servlet Filters operate outside and before Spring MVC's DispatcherServlet. 
+Spring Security itself is built on a chain of filters (SecurityFilterChain).
+
+It is crucial to perform JWT validation in a Servlet Filter rather than in the 
+DispatcherServlet or Controllers because:
+1. Early Rejection: If a request carries an invalid, malformed, or expired token, 
+   we want to reject it immediately (returning HTTP 401/403) before the request 
+   reaches Spring MVC routing, saving server CPU and memory.
+2. Standard Security Context: Filters run early, allowing us to populate the 
+   SecurityContextHolder before any controller logic executes, ensuring that 
+   endpoint authorization is enforced correctly."
+
+--------------------------------------------------------------------------------
+Q6: How does @Transactional work internally under the hood?
+--------------------------------------------------------------------------------
+ANSWER:
+"Spring's @Transactional annotation works using Spring AOP (Aspect-Oriented 
+Programming) and Dynamic Proxies.
+
+When a method is marked as @Transactional:
+1. Spring wraps the bean in a Proxy Object.
+2. When a caller invokes the method, the call goes to the Proxy first.
+3. The Proxy intercepts the call, obtains a connection from the DataSource, 
+   and starts a database transaction by setting autoCommit to false.
+4. The Proxy then delegates the call to the actual target service method.
+5. Commit: If the method completes successfully, the Proxy calls commit() on 
+   the connection.
+6. Rollback: If the method throws a RuntimeException or Error, the Proxy catches 
+   it and calls rollback().
+7. Finally, it closes and returns the connection to the connection pool."
+
+--------------------------------------------------------------------------------
+Q7: What is the self-invocation problem with @Transactional?
+--------------------------------------------------------------------------------
+ANSWER:
+"The self-invocation problem occurs when a non-transactional method inside a class 
+calls a @Transactional method inside the same class.
+
+Because the call originates from within the same class, Java uses the 'this' 
+reference instead of calling the method through Spring's Proxy Object. Since the 
+Proxy is bypassed, the transaction interception logic never executes, and the database 
+operation runs without a transaction. To fix this, the @Transactional method must 
+be moved to a separate bean, or the class must inject its proxy self."
+
+--------------------------------------------------------------------------------
+Q8: What is the difference between Password Hashing and Password Encryption?
+--------------------------------------------------------------------------------
+ANSWER:
+"Password Encryption is a two-way function. You encrypt plaintext into ciphertext, 
+and you can decrypt it back to plaintext if you possess the secret key. 
+We should never encrypt passwords.
+
+Password Hashing is a one-way cryptographic function (like BCrypt). Once a password 
+is hashed, it is mathematically impossible to reverse-engineer it back to plaintext. 
+During login, we take the raw incoming password, hash it with the stored salt, 
+and compare the resulting hash with the stored hash using passwordEncoder.matches(). 
+This ensures that even if our database is leaked, the plaintext passwords remain secure."
+
+--------------------------------------------------------------------------------
+Q9: Why did you implement a separate CustomUserDetailsService instead of defining 
+    the bean inside SecurityConfig?
+--------------------------------------------------------------------------------
+ANSWER:
+"Defining the UserDetailsService bean directly inside SecurityConfig causes a 
+circular dependency error (BeanCurrentlyInCreationException).
+
+This is because SecurityConfig needs to inject JwtAuthenticationFilter, which in 
+turn needs to inject UserDetailsService. If UserDetailsService is defined inside 
+SecurityConfig, Spring enters an infinite loop trying to construct SecurityConfig.
+
+By creating a separate CustomUserDetailsService class annotated with @Service, 
+we break this loop, keep our code clean, and separate database-specific user-loading 
+logic from security filter chain configuration."
+
+--------------------------------------------------------------------------------
+Q10: Walk me through the detailed execution flow of JWT Login (Credentials Authentication)
+--------------------------------------------------------------------------------
+ANSWER:
+"1. HTTP POST request containing credentials (username, password) is sent to /api/v1/auth/login.
+2. The request passes the filter chain because this path is configured as .permitAll().
+3. DispatcherServlet routes the request to AuthController.loginUser(), which delegates to UserService.loginUser().
+4. Inside the service, we instantiate a UsernamePasswordAuthenticationToken and pass it to the AuthenticationManager.
+5. The manager delegates to DaoAuthenticationProvider, which loads user credentials via our CustomUserDetailsService from the PostgreSQL database.
+6. The provider calls PasswordEncoder.matches() to compare the incoming password with the hashed database password.
+7. If authenticated, the manager returns the principal. The service extracts the canonical username, calls JwtUtils.generateToken(), and returns a LoginResponse containing the JWT token."
+
+--------------------------------------------------------------------------------
+Q11: Walk me through the execution flow of JWT Request Validation for secure endpoints
+--------------------------------------------------------------------------------
+ANSWER:
+"1. Client calls a secure endpoint (e.g. GET /api/v1/users) sending the header: 'Authorization: Bearer <token>'.
+2. The request enters the filter chain and is intercepted by JwtAuthenticationFilter (OncePerRequestFilter).
+3. The filter extracts the raw token from the header by stripping the 'Bearer ' prefix.
+4. The filter calls JwtUtils.validateToken() to verify the signature and expiration against the secret key.
+5. If valid, the filter extracts the username (subject) and loads the UserDetails from the database via CustomUserDetailsService to verify the user still exists and fetch roles.
+6. The filter creates a UsernamePasswordAuthenticationToken and injects it into Spring's static SecurityContextHolder.
+7. The request proceeds down the chain. Spring Security checks the SecurityContext, authorizes the request, and allows DispatcherServlet to route it to UserController.getUsersList()."
+
+--------------------------------------------------------------------------------
+Q12: How will OAuth2 Login integrate with our existing JWT-based Stateless Architecture?
+--------------------------------------------------------------------------------
+ANSWER:
+"1. The user logs in via Google/GitHub OAuth2. The frontend obtains an authorization code and submits it to our backend at POST /api/v1/auth/oauth2/google.
+2. The backend exchanges this code for Google's access token and requests the user profile details (email, providerId, names).
+3. The backend checks if a User exists in our database with that email and provider. If not, it registers the user (setting provider = GOOGLE and leaving the password blank/random).
+4. The backend then issues its own custom JWT token signed by our secret key.
+5. The frontend receives our JWT token and uses it to authorize all subsequent requests to our secure endpoints. 
+We issue our own token rather than reusing Google's token to keep our authorization roles, permissions, and token lifetimes independent of Google's APIs."
+
+--------------------------------------------------------------------------------
+Q13: What is the difference between Lazy and Eager fetching in JPA/Hibernate? 
+     What is the default fetch type for @OneToOne?
+--------------------------------------------------------------------------------
+ANSWER:
+"Eager Fetching (FetchType.EAGER) means Hibernate automatically loads the associated 
+child entity immediately at the same time it loads the parent entity (using database 
+joins or secondary select queries).
+
+Lazy Fetching (FetchType.LAZY) means Hibernate does not fetch the child database 
+record until the getter method for the association is explicitly called in code. 
+Instead, it puts a lightweight Proxy object in its place.
+
+By default, in JPA, the @OneToOne and @ManyToOne associations default to EAGER 
+fetching, while @OneToMany and @ManyToMany default to LAZY fetching. In production, 
+we should always explicitly override @OneToOne to use LAZY fetching to avoid 
+unnecessary joins and performance degradation."
+
+--------------------------------------------------------------------------------
+Q14: What do Cascade operations mean in Hibernate, and why do we use them?
+--------------------------------------------------------------------------------
+ANSWER:
+"Cascade operations dictate how changes applied to a parent entity propagate to 
+its child entities. For example, cascade = CascadeType.ALL propagation rules mean 
+that if you persist, merge, refresh, or remove a parent object (like User), Hibernate 
+will automatically execute the same action on the child object (like UserPreferences).
+
+In the case of User and UserPreferences, we configure CascadeType.ALL because a 
+preferences record cannot exist without a user. If we delete a User, their associated 
+preferences should be automatically deleted (cascading the delete) to prevent orphan 
+records and maintain database integrity."
+
+--------------------------------------------------------------------------------
+Q15: How does the @OneToOne relationship Owning vs Inverse side mapping work? 
+     What is the Hibernate Lazy Loading limitation on the inverse side?
+--------------------------------------------------------------------------------
+ANSWER:
+"In a bidirectional @OneToOne relationship:
+1. The Owning Side holds the foreign key column in the database and is mapped 
+   using @JoinColumn. For example, UserPreferences is the owning side because its 
+   table has the 'user_id' foreign key column pointing to the users_tbl table.
+2. The Inverse Side is the referencing side and uses the 'mappedBy' attribute to 
+   point to the field name in the owning class. For example, User has mappedBy = 'user'.
+
+The Hibernate Lazy Loading Limitation:
+In Hibernate, lazy loading on the inverse (referencing) side of a @OneToOne 
+relationship is disabled by default—it is always eagerly loaded even if you write 
+fetch = FetchType.LAZY. 
+
+This is because the parent table (users_tbl) does not have a foreign key column to 
+tell Hibernate whether the associated child record is null or exists. Hibernate is 
+forced to execute a SELECT query on the child table immediately to determine if it 
+should set the field to null or instantiate a proxy object. The owning side 
+(UserPreferences), however, has the foreign key in its own table, so it can easily 
+be lazy-loaded."
+================================================================================
