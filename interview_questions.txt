@@ -622,3 +622,25 @@ ANSWER:
    - Usage: Used in `@SpringBootTest` or `@WebMvcTest` to stub external interfaces (like mail 
      senders or payment gateways) while letting Spring wire the rest of the application context."
 ================================================================================
+
+--------------------------------------------------------------------------------
+Q32: What is an HTTP Interceptor in a frontend Single Page Application (SPA), 
+     and how does it implement seamless JWT access token refresh under the hood?
+--------------------------------------------------------------------------------
+ANSWER:
+"An HTTP Interceptor is a configuration layer in a client-side API engine (like Axios 
+interceptors or custom fetch wrappers) that intercepts outgoing requests before they leave 
+the client, and incoming responses before they are processed by calling components.
+
+1. Outgoing Hook: The interceptor automatically injects the stored `Authorization: Bearer <token>` 
+   header to outgoing HTTP requests, eliminating manual boilerplate across components.
+2. Incoming Hook (401 Trapping): If the backend responds with a `401 Unauthorized` status (indicating 
+   the access token has expired), the interceptor halts the user execution flow.
+3. Silent Rotation: In the background, the interceptor sends a request to the `/api/v1/auth/refresh` 
+   endpoint with the `refreshToken`.
+   - If successful, it stores the new access/refresh tokens in localStorage.
+   - It then updates the headers on the original failed request with the new access token and 
+     resends it, creating a seamless user experience.
+   - If the refresh token is also expired or invalid, it clears credentials and redirects the user 
+     to the login screen."
+================================================================================
