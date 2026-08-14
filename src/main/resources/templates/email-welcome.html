@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome to LifeOS</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            background-color: #ffffff;
+            margin: 0 auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background-color: #4f46e5;
+            color: #ffffff;
+            padding: 30px;
+            text-align: center;
+        }
+        .content {
+            padding: 30px;
+            color: #374151;
+            line-height: 1.6;
+        }
+        .button {
+            display: inline-block;
+            background-color: #4f46e5;
+            color: #ffffff !important;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-weight: bold;
+        }
+        .footer {
+            background-color: #f9fafb;
+            color: #9ca3af;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Welcome to LifeOS!</h1>
+        </div>
+        <div class="content">
+            <p>Hi <span th:text="${name}">User</span>,</p>
+            <p>Thank you for registering on LifeOS. We are excited to help you organize your projects, manage your daily tasks, and achieve your goals!</p>
+            <p>Get started by setting your personal preferences and creating your first project.</p>
+            <a href="#" class="button">Explore Dashboard</a>
+        </div>
+        <div class="footer">
+            <p>&copy; 2026 LifeOS. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

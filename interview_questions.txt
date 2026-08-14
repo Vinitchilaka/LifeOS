@@ -254,3 +254,371 @@ should set the field to null or instantiate a proxy object. The owning side
 (UserPreferences), however, has the foreign key in its own table, so it can easily 
 be lazy-loaded."
 ================================================================================
+
+--------------------------------------------------------------------------------
+Q16: Why should you validate JWT in a Servlet Filter rather than a Spring MVC 
+     Interceptor (HandlerInterceptor)?
+--------------------------------------------------------------------------------
+ANSWER:
+"We validate JWTs in a Servlet Filter because of two core architectural reasons:
+
+1. Scope of Control (Early Rejection): Servlet Filters execute early in the request 
+   lifecycle at the web container level (Tomcat), before the request reaches Spring 
+   MVC's DispatcherServlet. If a request carries an invalid, expired, or missing 
+   token, we can reject it immediately (returning 401/403) without wasting server CPU 
+   and memory on Spring MVC routing, controller mapping, and parameter resolution.
+2. Spring Security Architecture: Spring Security is built entirely on a chain of 
+   Servlet Filters. Endpoint authorization checks (e.g. .anyRequest().authenticated()) 
+   occur within the filter chain. To authorize requests, the SecurityContextHolder 
+   must be populated *before* authorization filters run. Interceptors run inside 
+   Spring MVC, which is too late to set up this context."
+
+--------------------------------------------------------------------------------
+Q17: Why is the doFilterInternal() method in our JwtAuthenticationFilter executed 
+     first before the Controller mapping?
+--------------------------------------------------------------------------------
+ANSWER:
+"The doFilterInternal() method is executed first because our filter extends Spring's 
+OncePerRequestFilter, which is a Servlet Filter. 
+
+In Java web applications, HTTP requests pass through the Servlet Container (Tomcat) 
+first. Tomcat executes a chain of registered filters (the FilterChain) before delegating 
+the request to Spring MVC's DispatcherServlet. 
+
+Since Spring Security is a chain of servlet filters, and we inserted our custom 
+JwtAuthenticationFilter into this chain using '.addFilterBefore(...)', Tomcat intercepts 
+the incoming request early, runs our doFilterInternal() logic to validate the JWT, 
+and only forwards the request to DispatcherServlet (and eventually to the Controller) 
+after our filter explicitly calls 'filterChain.doFilter(request, response)'."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q18: Why do we use @Transactional(readOnly = true) for read operations, and what 
+     optimizations does it provide under the hood in Spring/Hibernate?
+--------------------------------------------------------------------------------
+ANSWER:
+"We use @Transactional(readOnly = true) for read-only operations (like fetching profiles 
+or preferences) to achieve three major performance optimizations:
+
+1. Disabling Dirty Checking (Hibernate level): By default, Hibernate keeps an in-memory 
+   copy (snapshot) of every loaded entity. At the end of a transaction, it compares 
+   the entity's current state with the snapshot to see if it needs to execute an UPDATE 
+   statement (Dirty Checking). With readOnly = true, Hibernate disables dirty checking, 
+   saving CPU and memory by not storing snapshots or performing comparison checks.
+2. Manual Flush Mode (Hibernate level): Hibernate sets the FlushMode to MANUAL. This 
+   prevents automatic flushes of SQL statements during database reads, saving database 
+   write locks and roundtrips.
+3. Connection Level Optimization (JDBC/DB level): Spring passes this flag to the 
+   JDBC driver, calling 'connection.setReadOnly(true)'. If the database supports it 
+   (like PostgreSQL), this allows the database to optimize locking strategies, query 
+   execution plans, and safely route queries to read-only replica databases."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q19: In our User-UserPreferences bidirectional relationship, how does saving the 
+     parent User automatically update the child preferences without calling save 
+     on a separate preferences repository?
+--------------------------------------------------------------------------------
+ANSWER:
+"This is achieved using JPA Cascading. In the User entity, we configured the association 
+with: 
+
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+
+The cascade = CascadeType.ALL setting dictates that any persistence operations (such 
+as persist, merge, or save) performed on the parent User entity propagate automatically 
+to the associated UserPreferences entity.
+
+Furthermore, inside a @Transactional boundary:
+1. The User entity and its linked UserPreferences are loaded into the Hibernate 
+   Persistence Context, making them 'Managed' entities.
+2. When we modify fields on the preferences object, Hibernate's dirty checking mechanism 
+   detects these changes at transaction commit time.
+3. Hibernate automatically executes the appropriate SQL UPDATE on user_preferences_tbl 
+   to synchronize the state, even without calling save() explicitly."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q20: Why should you create a custom wrapper (like PaginatedUserResponse) instead of 
+     returning Spring Data's Page<User> directly from the REST Controller?
+--------------------------------------------------------------------------------
+ANSWER:
+"We avoid returning Spring Data's Page<T> directly from Controllers for three key 
+architectural reasons:
+
+1. Decoupling the API Contract: Page<T> is a framework-specific class belonging to 
+   Spring Data. If we return it directly, our external REST API contract is tightly 
+   coupled to our persistence framework. If we ever migrate away from Spring Data JPA 
+   (e.g., to MyBatis or bare JDBC), our API response format would break. Using a custom 
+   DTO record ensures our API contract remains stable regardless of internal framework 
+   changes.
+2. Serialization Control (Response Cleanliness): The Page<T> object contains a lot 
+   of framework-internal metadata (like complex Pageable and Sort nested objects) 
+   that is serialized into JSON by default. This makes the JSON response bloated and 
+   hard for frontend developers to parse. A custom DTO allows us to serialize only the 
+   necessary metadata (like pageNo, pageSize, totalElements, totalPages, last).
+3. Entity Encapsulation: We must never leak database entities (User) inside the Page 
+   content list. Mapping the Page content to a list of UserResponseDTO inside a custom 
+   wrapper enforces strict security boundaries, preventing the leakage of passwords or 
+   sensitive fields."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q21: Why is Google OAuth2 not a replacement for our local JWT architecture? How 
+     do they work together to solve different problems?
+--------------------------------------------------------------------------------
+ANSWER:
+"Google OAuth2 and local JWTs are not competing technologies; they serve completely 
+different purposes in a secure web application:
+
+1. Authentication vs. Session Authorization: Google OAuth2 acts as the Authentication 
+   mechanism (Federated SSO). It verifies the user's identity (answering 'Who is this 
+   user?'). Our local JWT is the Authorization & Session mechanism (answering 'Does 
+   this user have access to our APIs, and what are their roles?').
+2. Decoupling & API Performance: If we used Google's access token directly for our 
+   endpoints, our backend would need to call Google's API on every single incoming request 
+   to validate the token. This creates a single point of failure (if Google is down, 
+   our app is down) and heavily degrades performance due to network latency. By exchanging 
+   Google's code for our own JWT once during login, subsequent requests are validated 
+   statelessly in milliseconds.
+3. Identity Merging: Our local database is the single source of truth. A user can log 
+   in via email/password, Google, or GitHub. By mapping the external provider profile 
+   to our local User record and issuing a unified local JWT, our resource endpoints 
+   remain clean, consistent, and independent of the login method."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q22: Why is database-level cascade (ON DELETE CASCADE via @OnDelete) preferred 
+     over JPA-level cascade (CascadeType.ALL) for parent-child deletions in production?
+--------------------------------------------------------------------------------
+ANSWER:
+"We prefer database-level cascades (@OnDelete) over JPA-level cascades (CascadeType.ALL) 
+for large-scale deletions due to critical differences in query execution and performance:
+
+1. JPA-Level Cascade (CascadeType.ALL): Hibernate must load all child entities (e.g., 
+   10,000 tasks) into the JVM memory (Persistence Context) to track their state changes, 
+   and then execute 10,000 individual SQL DELETE queries. This causes excessive memory 
+   consumption, high CPU load, network latency, and severe database locking.
+2. Database-Level Cascade (@OnDelete): Hibernate only issues a single query to delete 
+   the parent row (e.g., DELETE FROM users_tbl WHERE id = ?). The database engine itself 
+   automatically handles the deletion of all corresponding child rows in tasks_tbl/projects_tbl 
+   in a single, native database operation. This reduces network round-trips from 10,000 
+   to 1, optimizing execution speed and transaction safety."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q23: How do Spring's @Transactional proxy mechanics and Transaction Manager 
+     handle coordinate updates across multiple operations (like task update and goal progress)?
+--------------------------------------------------------------------------------
+ANSWER:
+"Spring coordinates multi-entity operations (e.g., saving a Task and updating the Goal) 
+inside a single transactional boundary using AOP Proxies and the Transaction Manager:
+
+1. AOP Proxy Interception: When a method (like updateTask) annotated with @Transactional 
+   is invoked, Spring's proxy intercepts the call. It opens a physical database connection, 
+   disables auto-commit (connection.setAutoCommit(false)), and binds this connection to 
+   the current executing thread using TransactionSynchronizationManager.
+2. Connection Reuse (Propagation): Under the hood, default propagation (Propagation.REQUIRED) 
+   ensures that subsequent database operations (e.g., countByGoal, countByGoalAndStatus, 
+   goalRepository.save) executed within the method share the exact same database connection 
+   and transaction block.
+3. Commit/Rollback Resolution: If the method returns normally, the proxy commits the 
+   transaction (connection.commit()). If any RuntimeException or Error is thrown during 
+   execution (e.g., validation fail, entity not found, database lock), the proxy intercepts 
+   the exception and issues a rollback (connection.rollback()), ensuring all tables return 
+   to their original consistent state."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q24: Why should you configure JSON Serialization (like GenericJackson2JsonRedisSerializer) 
+     for Redis values instead of using Spring's default JDK Binary Serializer?
+--------------------------------------------------------------------------------
+ANSWER:
+"We configure JSON Serialization for Redis caching in production for three key 
+architectural reasons:
+
+1. Class Resiliency (Deserialization Safety): Spring's default JDK Serializer relies 
+   on a serialVersionUID. If we cache a Java object, and then modify that class (e.g., 
+   adding, renaming, or deleting fields) and redeploy, reading the old binary cache data 
+   will cause a SerializationException and crash. JSON serialization is resilient to class 
+   changes (Jackson simply ignores missing or extra fields during binding).
+2. Interoperability (Cross-Platform): JDK binary serialization is specific to Java. If 
+   other services in our architecture written in Node.js, Python, or Go need to access 
+   or modify the Redis cache, they cannot decode Java binary streams. JSON is universal, 
+   allowing seamless cross-platform sharing.
+3. Readability & Debugging: Raw binary data stored in Redis is unreadable to developers 
+   using Redis CLI or GUI tools. Serializing as JSON stores data as clean strings, making 
+   it trivial to inspect, debug, and manually adjust values in the cache during testing."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q25: Why is ThreadPoolTaskExecutor mandatory in production, and how do we prevent 
+     concurrency race conditions (lost updates) in a distributed backend environment?
+--------------------------------------------------------------------------------
+ANSWER:
+"We use ThreadPoolTaskExecutor to bound memory and thread creation. In production, we 
+prevent concurrency issues differently based on the scope:
+
+1. JVM-Level Concurrency (Single Node): For in-memory shared resources, we can use Java's 
+   synchronized blocks, ReentrantLock, or Concurrent collections (like ConcurrentHashMap).
+2. Distributed Backend Concurrency (Multiple Nodes): In a real-world web application 
+   running behind a load balancer, Java's synchronized keyword does not work because it 
+   cannot synchronize across different JVM instances. To prevent race conditions on database 
+   records, we must use:
+   - Optimistic Locking: Uses a @Version field on the JPA entity. If two threads read the 
+     same row and try to update it, the first commit succeeds and increments the version. 
+     The second commit fails with an OptimisticLockException.
+   - Pessimistic Locking: Instructs the database to lock the row natively using SELECT ... 
+     FOR UPDATE, forcing other transactions to block and wait.
+   - Distributed Locks (Redis/Redlock): Acquires a shared lock key in Redis before running 
+     the critical section."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q26: Why should email-sending operations always be executed asynchronously in a 
+     REST API environment? What happens if they are executed synchronously?
+--------------------------------------------------------------------------------
+ANSWER:
+"We must always execute email sending asynchronously in production REST APIs for three 
+critical reasons:
+
+1. Request Thread Blocking (Latency): Connecting to an external SMTP mail server (like 
+   Gmail or SendGrid), performing SMTP handshake, transmitting the payload, and waiting 
+   for the SMTP response is a slow I/O bound network operation that typically takes **1 
+   to 5 seconds**. If run synchronously on the HTTP request thread, the client's API call 
+   is blocked, causing a terrible user experience (e.g., the signup button spins for 
+   5 seconds). Offloading it to a background thread pool returns the HTTP response in 
+   milliseconds.
+2. Single Point of Failure: If the external mail server is slow or temporarily down, 
+   a synchronous email call would throw an exception that could fail the entire client 
+   request. If a user registers successfully but SMTP fails, the transaction would rollback 
+   and the user account creation would fail. Async execution decouples the main business transaction 
+   from the notification delivery.
+3. Thread Exhaustion: Under high traffic, synchronous I/O blocks the Tomcat request thread 
+   pool. When all available threads are blocked waiting for slow SMTP handshakes, the application 
+   server cannot accept new HTTP requests, leading to server timeouts and system failure."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q27: What is a BeanOutputConverter in Spring AI, and how does it guarantee 
+     type-safe structured JSON responses from LLM chats?
+--------------------------------------------------------------------------------
+ANSWER:
+"A BeanOutputConverter in Spring AI is a helper component that solves the challenge of 
+converting unstructured natural language text from LLMs into type-safe Java objects (like 
+records or classes):
+
+1. Automated Instruction Injection: When instantiated with a Target class (e.g., 
+   BeanOutputConverter<MyResponse>(MyResponse.class)), Spring AI generates formal formatting 
+   instructions detailing the expected JSON schema and appends them to the system prompt 
+   via outputConverter.getFormat().
+2. Automated Parsing & Binding: Once the LLM returns the raw JSON string, the converter 
+   automatically handles the deserialization (using Jackson object mapping) under the hood.
+3. Resiliency & Type Safety: If the LLM output is malformed or invalid, the converter raises 
+   a parsing exception that can be caught by global exception handlers. This eliminates 
+   brittle manual regex parsing, ensuring clean integration with Spring REST controllers."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q28: How do you guarantee in Docker Compose that a Spring Boot application only 
+     starts after the PostgreSQL database and Redis cache are fully ready to accept connections?
+--------------------------------------------------------------------------------
+ANSWER:
+"In Docker Compose, simply declaring `depends_on: [db, redis]` is NOT sufficient because 
+Docker only waits for the database/cache container processes to *start*, not for them to 
+be ready to accept connections. If the Spring Boot app starts before the database finishes 
+initialization, it will crash immediately.
+
+To guarantee correct startup ordering, we must combine `depends_on` with **Healthchecks**:
+
+1. Define Healthchecks: In the db/redis services, we define a health probe.
+   - For PostgreSQL: `pg_isready -U postgres -d dbname`
+   - For Redis: `redis-cli ping`
+2. Conditional Dependency: In the Spring Boot app service, we configure `depends_on` 
+   with conditions:
+   ```yaml
+   depends_on:
+     db:
+       condition: service_healthy
+     redis:
+       condition: service_healthy
+   ```
+This forces the Docker Engine to block the Spring Boot container startup until the database 
+and Redis health probes return successfully (healthy), preventing connection failures."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q29: How do you write a custom HealthIndicator in Spring Boot, and how does Actuator 
+     determine the final aggregated application health status?
+--------------------------------------------------------------------------------
+ANSWER:
+"We write a custom health indicator in Spring Boot to expose custom status checks (like 
+SMTP connections or database counts) by implementing the `HealthIndicator` interface:
+
+1. Custom Health Indicator: We declare a Spring component and override the `health()` method:
+   ```java
+   @Component
+   public class MyHealthIndicator implements HealthIndicator {
+       public Health health() {
+           boolean isUp = checkConnection();
+           return isUp ? Health.up().build() : Health.down().withDetail("err", "Reason").build();
+       }
+   }
+   ```
+2. Auto-Discovery: Spring Boot Actuator automatically scans all beans implementing the 
+   `HealthIndicator` interface and aggregates them into the `/actuator/health` response.
+3. Aggregation Strategy: Under the hood, Spring uses a `HealthContributorRegistry` and 
+   a `StatusAggregator` (typically `OrderedStatusAggregator`). It aggregates all child 
+   probes (db, diskSpace, ping, and custom indicators) into a single top-level status. If 
+   ANY single health probe reports `DOWN` or `OUT_OF_SERVICE`, the aggregator marks the overall 
+   status as `DOWN` (priority: DOWN > OUT_OF_SERVICE > UP > UNKNOWN), failing Kubernetes readiness probes."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q30: What is a Consumer Group in Apache Kafka? How does it partition ownership, 
+     and what happens if the number of consumers exceeds the number of partitions?
+--------------------------------------------------------------------------------
+ANSWER:
+"A Consumer Group is a collection of consumers that cooperate to consume messages from 
+a set of topics. It is Kafka's primary mechanism for scaling consumption throughput:
+
+1. Partition Distribution: Kafka guarantees that each partition in a topic is consumed 
+   by exactly one consumer member within a specific group. If a topic has 4 partitions 
+   and our group has 2 consumers, each consumer is assigned 2 partitions.
+2. Horizontal Scaling: If the consumption load increases, we can add more consumers 
+   to the group. Kafka automatically triggers a **Rebalance** to redistribute partitions. 
+   If we have 4 partitions and 4 consumers, each consumer gets 1 partition.
+3. Exceeding Partition Limits: If we add a 5th consumer to a group listening to a topic 
+   with 4 partitions, the 5th consumer will remain **idle** (assigned 0 partitions). Kafka 
+   never allows two consumers in the same group to read from the same partition simultaneously 
+   (to guarantee message processing order within a partition). To scale beyond this limit, 
+   we must increase the topic's partition count."
+================================================================================
+
+--------------------------------------------------------------------------------
+Q31: What is the difference between `@Mock`, `@Spy`, and `@MockBean` in Spring Boot tests, 
+     and when should you use each?
+--------------------------------------------------------------------------------
+ANSWER:
+"These three annotations serve different purposes in unit and integration testing:
+
+1. `@Mock` (Mockito):
+   - Scope: Pure JUnit unit testing (no Spring context loaded).
+   - Behavior: Creates a complete mock instance of a class. Every method call returns default 
+     values (null, 0, false) unless stubbed (using `when().thenReturn()`).
+   - Usage: Used alongside `@ExtendWith(MockitoExtension.class)` to test services in isolation.
+
+2. `@Spy` (Mockito):
+   - Scope: Pure JUnit unit testing (no Spring context loaded).
+   - Behavior: Creates a partial mock wrapper around a real instance of a class. It calls the 
+     actual code of the class by default, but allows you to stub specific methods.
+   - Usage: Used when you want to track or mock specific methods on a class while executing 
+     real logic for the rest.
+
+3. `@MockBean` (Spring Boot Test):
+   - Scope: Spring Integration testing (loads the Spring `ApplicationContext`).
+   - Behavior: Creates a Mockito mock and registers it inside the active Spring Boot test 
+     `ApplicationContext`. It automatically replaces any existing bean of the same type.
+   - Usage: Used in `@SpringBootTest` or `@WebMvcTest` to stub external interfaces (like mail 
+     senders or payment gateways) while letting Spring wire the rest of the application context."
+================================================================================

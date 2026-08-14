@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Overdue Tasks Digest - LifeOS</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            background-color: #ffffff;
+            margin: 0 auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background-color: #ef4444;
+            color: #ffffff;
+            padding: 30px;
+            text-align: center;
+        }
+        .content {
+            padding: 30px;
+            color: #374151;
+            line-height: 1.6;
+        }
+        .task-list {
+            margin: 20px 0;
+            padding-left: 20px;
+        }
+        .task-item {
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: #b91c1c;
+        }
+        .footer {
+            background-color: #f9fafb;
+            color: #9ca3af;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Overdue Tasks Alert</h1>
+        </div>
+        <div class="content">
+            <p>Hi <span th:text="${name}">User</span>,</p>
+            <p>This is a friendly reminder that you have pending tasks in LifeOS that are past their due dates. To help you stay on track, we have escalated their priorities to **HIGH**.</p>
+            <p>Here are your overdue tasks:</p>
+            <ul class="task-list">
+                <li class="task-item" th:each="taskTitle : ${taskTitles}" th:text="${taskTitle}">Task Title</li>
+            </ul>
+            <p>Please log in and update their status or reschedule them.</p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2026 LifeOS. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

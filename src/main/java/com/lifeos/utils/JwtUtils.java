@@ -29,15 +29,19 @@ public class JwtUtils {
 
     // 1. Generate Token from Username
     public String generateToken(String username) {
+        System.out.println("[FLOW 6] JwtUtils: Generating JWT for subject: " + username + " with expiration of " + jwtExpirationMs + " ms.");
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
 
-        return Jwts.builder()
+        String token = Jwts.builder()
                 .setSubject(username)
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
+        
+        System.out.println("[FLOW 6] JwtUtils: Token generation complete.");
+        return token;
     }
 
     // 2. Extract Username (Subject) from Token

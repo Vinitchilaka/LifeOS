@@ -31,16 +31,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        // ADD THESE TWO LINES FOR DEBUGGING:
-        System.out.println("=== JWT FILTER TRIGGERED FOR URI: " + request.getRequestURI() + " ===");
-        System.out.println("=== Authorization Header: " + request.getHeader("Authorization") + " ===");
+        System.out.println("\n[FLOW 1] JwtAuthenticationFilter: Intercepted request to URI: " + request.getRequestURI());
+        String jwt = parseJwt(request);
+        if (jwt == null) {
+            System.out.println("[FLOW 1] JwtAuthenticationFilter: No JWT Token found in Authorization header. Proceeding down filter chain.");
+        } else {
+            System.out.println("[FLOW 1] JwtAuthenticationFilter: JWT Token found. Validating token...");
+        }
 
         try {
-            String jwt = parseJwt(request);
             if (jwt != null && jwtUtils.validateToken(jwt)) {
                 String username = jwtUtils.getUsernameFromToken(jwt);
-
-                // Load user from database to ensure they still exist and check roles
+                System.out.println("[FLOW 1] JwtAuthenticationFilter: JWT is valid. Username: " + username + ". Loading UserDetails...");
+                
+                // Note: Loading user details here will also trigger CustomUserDetailsService loadUserByUsername
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
@@ -49,6 +53,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 // Set user authentication inside Spring Security context
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                System.out.println("[FLOW 1] JwtAuthenticationFilter: SecurityContext successfully populated for user: " + username);
             }
         } catch (Exception e) {
             e.printStackTrace();
