@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:8080';
+const BASE_URL = 'http://localhost:9091';
 
 // In-memory or localStorage token storage helpers
 export const getAccessToken = () => localStorage.getItem('access_token');
@@ -91,6 +91,7 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ username, password })
     });
+    
     if (!res.ok) throw new Error('Invalid login credentials');
     const data = await res.json();
     setTokens(data.accessToken, data.refreshToken);
