@@ -72,9 +72,10 @@ async function attemptTokenRotation() {
     if (response.ok) {
       const data = await response.json();
       // Expect token rotation schema: data.accessToken, data.refreshToken
-      if (data.accessToken && data.refreshToken) {
+      const accessToken = data.accessToken || data.token;
+      if (accessToken && data.refreshToken) {
         console.log('[API Interceptor] Token rotation successful!');
-        setTokens(data.accessToken, data.refreshToken);
+        setTokens(accessToken, data.refreshToken);
         return true;
       }
     }
@@ -94,7 +95,8 @@ export const authApi = {
     
     if (!res.ok) throw new Error('Invalid login credentials');
     const data = await res.json();
-    setTokens(data.accessToken, data.refreshToken);
+    const accessToken = data.accessToken || data.token;
+    setTokens(accessToken, data.refreshToken);
     localStorage.setItem('user_info', JSON.stringify({ username: data.username }));
     return data;
   },
@@ -118,7 +120,8 @@ export const authApi = {
     });
     if (!res.ok) throw new Error('Google authentication failed');
     const data = await res.json();
-    setTokens(data.accessToken, data.refreshToken);
+    const accessToken = data.accessToken || data.token;
+    setTokens(accessToken, data.refreshToken);
     localStorage.setItem('user_info', JSON.stringify({ username: data.username }));
     return data;
   }
