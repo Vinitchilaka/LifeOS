@@ -173,6 +173,12 @@ export const projectApi = {
   }
 };
 
+const formatLocalDateTime = (dateStr) => {
+  if (!dateStr) return null;
+  if (dateStr.includes('T')) return dateStr;
+  return `${dateStr}T00:00:00`;
+};
+
 export const goalApi = {
   getGoals: async () => {
     const res = await apiRequest('/api/v1/goals');
@@ -180,10 +186,15 @@ export const goalApi = {
     return await res.json();
   },
   
-  createGoal: async (title, description, targetDate) => {
+  createGoal: async (title, description, targetDate, status = 'PENDING') => {
     const res = await apiRequest('/api/v1/goals', {
       method: 'POST',
-      body: JSON.stringify({ title, description, targetDate })
+      body: JSON.stringify({
+        title,
+        description,
+        targetDate: formatLocalDateTime(targetDate),
+        status
+      })
     });
     if (!res.ok) throw new Error('Failed to create goal');
     return await res.json();
@@ -206,18 +217,26 @@ export const taskApi = {
   },
   
   createTask: async (taskData) => {
+    const payload = {
+      ...taskData,
+      dueDate: formatLocalDateTime(taskData.dueDate)
+    };
     const res = await apiRequest('/api/v1/tasks', {
       method: 'POST',
-      body: JSON.stringify(taskData)
+      body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error('Failed to create task');
     return await res.json();
   },
   
   updateTask: async (taskId, taskData) => {
+    const payload = {
+      ...taskData,
+      dueDate: formatLocalDateTime(taskData.dueDate)
+    };
     const res = await apiRequest(`/api/v1/tasks/${taskId}`, {
       method: 'PUT',
-      body: JSON.stringify(taskData)
+      body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error('Failed to update task');
     return await res.json();
